@@ -5,6 +5,7 @@ namespace RenokiCo\AwsElasticHandler;
 use Aws\Credentials\Credentials;
 use Aws\Signature\SignatureV4;
 use Elasticsearch\ClientBuilder;
+use GuzzleHttp\Client;
 use GuzzleHttp\Psr7\Request;
 use GuzzleHttp\Psr7\Uri;
 use GuzzleHttp\Ring\Future\CompletedFutureArray;
@@ -42,7 +43,11 @@ class AwsHandler
             return $this->handleRequestWithDefaultHandler($request);
         }
 
-        $psr7Handler = \Aws\default_http_handler();
+        $clientOptions = [
+          'verify' => $request['client']['verify'] ?? true
+        ];
+
+        $psr7Handler = $this->custom_http_handler($clientOptions);
         $signer = new SignatureV4('es', $this->config['aws_region']);
 
         $psr7Request = new Request(
@@ -97,5 +102,26 @@ class AwsHandler
         $defaultHandler = ClientBuilder::defaultHandler();
 
         return $defaultHandler($request);
+    }
+
+    /**
+     * Creates an HTTP handler based on the available clients using the provided config.
+     *
+     * @return \Aws\Handler\GuzzleV5\GuzzleHandler|callable|\Aws\Handler\GuzzleV6\GuzzleHandler
+     */
+    protected function custom_http_handler(array $config)
+    {
+        $version = \Aws\guzzle_major_version();
+        // If Guzzle 6 or 7 installed
+        if ($version === 6 || $version === 7) {
+            return new \Aws\Handler\GuzzleV6\GuzzleHandler(new Client($config));
+        }
+
+        // If Guzzle 5 installed
+        if ($version === 5) {
+            return new \Aws\Handler\GuzzleV5\GuzzleHandler(new Client($config));
+        }
+
+        throw new \RuntimeException('Unknown Guzzle version: ' . $version);
     }
 }
